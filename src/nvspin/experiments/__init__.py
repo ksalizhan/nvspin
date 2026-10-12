@@ -19,6 +19,10 @@ from .ramsey import (
     Ramsey,
     RamseyResult,
 )
+from .hahn_echo import (
+    HahnEcho,
+    HahnEchoResult,
+)
 
 __all__ = [
     "EnergyLevels",
@@ -30,4 +34,6 @@ __all__ = [
     "RabiResult",
     "Ramsey",
     "RamseyResult",
+    "HahnEcho",
+    "HahnEchoResult",
 ]
