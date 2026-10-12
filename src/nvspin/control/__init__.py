@@ -11,6 +11,10 @@ from .sequence import (
     PulseSequence,
 )
 
+from .two_level import (
+    rotating_frame_hamiltonian,
+)
+
 
 __all__ = [
     "MicrowavePulse",
@@ -18,4 +22,5 @@ __all__ = [
     "pi_over_2_pulse",
     "FreeEvolution",
     "PulseSequence",
+    "rotating_frame_hamiltonian",
 ]
