@@ -10,7 +10,16 @@ from numpy.typing import NDArray
 from nvspin.control.two_level import (
     rotating_frame_hamiltonian,
 )
-from nvspin.solvers import propagate_state
+
+from nvspin.noise import (
+    DecoherenceModel,
+)
+
+from nvspin.solvers import (
+    evolve_density_matrix,
+    population,
+    pure_state_density_matrix,
+)
 
 
 FloatArray = NDArray[np.float64]
@@ -72,13 +81,24 @@ class HahnEcho:
     phase_last
         Phase of the final pi/2 pulse in radians.
 
+    decoherence
+        Optional Markovian decoherence model.
+
+        If None, evolution is purely unitary.
+
+        If supplied, density-matrix evolution uses the
+        Lindblad master-equation backend.
+
     Notes
     -----
     free_detuning and pulse_detuning are intentionally
     independent.
 
-    This allows nvspin to distinguish free-precession phase
-    accumulation from microwave pulse errors.
+    This allows nvspin to distinguish:
+
+        - free-precession phase accumulation
+        - microwave pulse errors
+        - environmental decoherence
     """
 
     def __init__(
@@ -94,9 +114,14 @@ class HahnEcho:
         phase_first: float = 0.0,
         phase_pi: float = 0.0,
         phase_last: float = 0.0,
+        decoherence: DecoherenceModel | None = None,
     ) -> None:
 
         tau_min, tau_max = delay_range
+
+        # -----------------------------------------------------
+        # Validation
+        # -----------------------------------------------------
 
         if rabi_frequency <= 0:
             raise ValueError(
@@ -117,6 +142,10 @@ class HahnEcho:
             raise ValueError(
                 "points must be at least 2."
             )
+
+        # -----------------------------------------------------
+        # Store parameters
+        # -----------------------------------------------------
 
         self.free_detuning = float(
             free_detuning
@@ -151,6 +180,12 @@ class HahnEcho:
             phase_last
         )
 
+        self.decoherence = decoherence
+
+    # =========================================================
+    # Pulse durations
+    # =========================================================
+
     @property
     def pi_over_2_duration(self) -> float:
         """Ideal resonant pi/2 duration in ns."""
@@ -174,6 +209,10 @@ class HahnEcho:
                 * self.rabi_frequency
             )
         )
+
+    # =========================================================
+    # Hamiltonians
+    # =========================================================
 
     def _pulse_hamiltonian(
         self,
@@ -213,6 +252,10 @@ class HahnEcho:
             phase=0.0,
         )
 
+    # =========================================================
+    # Simulation
+    # =========================================================
+
     def simulate(
         self,
     ) -> HahnEchoResult:
@@ -228,6 +271,10 @@ class HahnEcho:
             2.0 * delays
         )
 
+        # -----------------------------------------------------
+        # Hamiltonians
+        # -----------------------------------------------------
+
         H_first = self._pulse_hamiltonian(
             self.phase_first
         )
@@ -242,6 +289,10 @@ class HahnEcho:
 
         H_free = self._free_hamiltonian()
 
+        # -----------------------------------------------------
+        # Initial pure state |0>
+        # -----------------------------------------------------
+
         initial_state = np.array(
             [
                 1.0,
@@ -250,10 +301,19 @@ class HahnEcho:
             dtype=complex,
         )
 
-        state_after_first = propagate_state(
-            initial_state,
+        initial_rho = pure_state_density_matrix(
+            initial_state
+        )
+
+        # -----------------------------------------------------
+        # First pi/2 pulse
+        # -----------------------------------------------------
+
+        rho_after_first = evolve_density_matrix(
+            initial_rho,
             H_first,
             self.pi_over_2_duration,
+            decoherence=self.decoherence,
         )
 
         ground_population = np.zeros(
@@ -266,51 +326,81 @@ class HahnEcho:
             dtype=float,
         )
 
+        # -----------------------------------------------------
+        # Sweep tau
+        # -----------------------------------------------------
+
         for index, delay in enumerate(
             delays
         ):
 
-            state = state_after_first.copy()
+            rho = rho_after_first.copy()
 
+            # -------------------------------------------------
             # First free-precession interval
-            state = propagate_state(
-                state,
+            # -------------------------------------------------
+
+            rho = evolve_density_matrix(
+                rho,
                 H_free,
                 delay,
+                decoherence=self.decoherence,
             )
 
+            # -------------------------------------------------
             # Refocusing pi pulse
-            state = propagate_state(
-                state,
+            # -------------------------------------------------
+
+            rho = evolve_density_matrix(
+                rho,
                 H_pi,
                 self.pi_duration,
+                decoherence=self.decoherence,
             )
 
+            # -------------------------------------------------
             # Second free-precession interval
-            state = propagate_state(
-                state,
+            # -------------------------------------------------
+
+            rho = evolve_density_matrix(
+                rho,
                 H_free,
                 delay,
+                decoherence=self.decoherence,
             )
 
+            # -------------------------------------------------
             # Final pi/2 pulse
-            state = propagate_state(
-                state,
+            # -------------------------------------------------
+
+            rho = evolve_density_matrix(
+                rho,
                 H_last,
                 self.pi_over_2_duration,
+                decoherence=self.decoherence,
             )
 
-            populations = (
-                np.abs(state) ** 2
-            )
+            # -------------------------------------------------
+            # Readout
+            # -------------------------------------------------
 
             ground_population[index] = (
-                populations[0]
+                population(
+                    rho,
+                    0,
+                )
             )
 
             excited_population[index] = (
-                populations[1]
+                population(
+                    rho,
+                    1,
+                )
             )
+
+        # -----------------------------------------------------
+        # Return result
+        # -----------------------------------------------------
 
         return HahnEchoResult(
             delays=delays,
