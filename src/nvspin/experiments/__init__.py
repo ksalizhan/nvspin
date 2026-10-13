@@ -23,6 +23,10 @@ from .hahn_echo import (
     HahnEcho,
     HahnEchoResult,
 )
+from .dynamical_decoupling import (
+    DynamicalDecoupling,
+    DynamicalDecouplingResult,
+)
 
 __all__ = [
     "EnergyLevels",
@@ -36,4 +40,6 @@ __all__ = [
     "RamseyResult",
     "HahnEcho",
     "HahnEchoResult",
+    "DynamicalDecoupling",
+    "DynamicalDecouplingResult",
 ]

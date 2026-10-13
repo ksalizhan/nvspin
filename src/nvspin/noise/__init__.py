@@ -4,7 +4,11 @@ from .decoherence import (
     DecoherenceModel,
 )
 
+from .stochastic import (
+    OrnsteinUhlenbeckNoise,
+)
 
 __all__ = [
     "DecoherenceModel",
+    "OrnsteinUhlenbeckNoise",
 ]
