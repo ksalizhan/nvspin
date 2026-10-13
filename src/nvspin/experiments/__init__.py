@@ -28,6 +28,12 @@ from .dynamical_decoupling import (
     DynamicalDecouplingResult,
 )
 
+from .dd_spectroscopy import (
+    DDSpectroscopyResult,
+    SingleCarbon13,
+    SingleCarbonDDSpectroscopy,
+)
+
 __all__ = [
     "EnergyLevels",
     "EnergyLevelResult",
@@ -42,4 +48,7 @@ __all__ = [
     "HahnEchoResult",
     "DynamicalDecoupling",
     "DynamicalDecouplingResult",
+    "DDSpectroscopyResult",
+    "SingleCarbon13",
+    "SingleCarbonDDSpectroscopy",
 ]
