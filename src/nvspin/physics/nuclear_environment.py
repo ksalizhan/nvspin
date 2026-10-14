@@ -164,7 +164,134 @@ class Carbon13Spin:
                 dtype=complex,
             )
         )
+    
+@dataclass(frozen=True)
+class Carbon13Pair:
+    """
+    Effective pseudospin model for an interacting 13C-13C pair.
 
+    In the high-field secular approximation, the two
+    anti-parallel nuclear states
+
+        |up down>
+        |down up>
+
+    form an effective spin-1/2 pseudospin.
+
+    Conditional Hamiltonians
+    ------------------------
+
+        H0 = X I_x
+
+        H1 = X I_x + Z I_z
+
+    Parameters
+    ----------
+    X
+        Nuclear-nuclear dipolar flip-flop coupling in GHz.
+
+    Z
+        Hyperfine-field gradient experienced when the
+        NV electron is in |1>, in GHz.
+
+    label
+        Optional human-readable identifier.
+
+    Notes
+    -----
+    This is an effective two-dimensional pseudospin model.
+
+    It does not explicitly propagate the full four-dimensional
+    Hilbert space
+
+        |up up>,
+        |up down>,
+        |down up>,
+        |down down>.
+
+    The approximation assumes the high-field regime in which
+    the parallel states are energetically separated from the
+    flip-flop subspace.
+    """
+
+    X: float
+    Z: float
+
+    label: str = "13C-13C pair"
+
+    @property
+    def H0(self) -> ComplexArray:
+        """
+        Pair pseudospin Hamiltonian for NV |0>.
+
+            H0 = X I_x
+        """
+
+        return (
+            self.X
+            * I_X
+        )
+
+    @property
+    def H1(self) -> ComplexArray:
+        """
+        Pair pseudospin Hamiltonian for NV |1>.
+
+            H1 = X I_x + Z I_z
+        """
+
+        return (
+            self.X
+            * I_X
+            +
+            self.Z
+            * I_Z
+        )
+
+    @property
+    def initial_density_matrix(
+        self,
+    ) -> ComplexArray:
+        """
+        Initially unpolarized pair pseudospin.
+
+            rho = I / 2
+        """
+
+        return (
+            0.5
+            * np.eye(
+                2,
+                dtype=complex,
+            )
+        )
+
+    @property
+    def frequency_0(self) -> float:
+        """
+        Pseudospin precession frequency for NV |0>.
+
+            f0 = |X|
+        """
+
+        return abs(
+            self.X
+        )
+
+    @property
+    def frequency_1(self) -> float:
+        """
+        Pseudospin precession frequency for NV |1>.
+
+            f1 = sqrt(X^2 + Z^2)
+        """
+
+        return float(
+            np.sqrt(
+                self.X**2
+                + self.Z**2
+            )
+        )
 
 def conditional_propagators(
     subsystem: ConditionalNuclearSubsystem,

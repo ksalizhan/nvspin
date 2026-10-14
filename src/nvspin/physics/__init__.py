@@ -21,6 +21,7 @@ from .operators import (
 )
 
 from .nuclear_environment import (
+    Carbon13Pair,
     Carbon13Spin,
     ConditionalNuclearSubsystem,
     IndependentNuclearEnvironment,
@@ -32,6 +33,7 @@ __all__ = [
     "NVCenter",
     "NuclearSpin",
     "Carbon13",
+    "Carbon13Pair",
     "Nitrogen14",
     "Nitrogen15",
     "spin_operators",
