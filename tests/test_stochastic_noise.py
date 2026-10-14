@@ -120,3 +120,82 @@ def test_long_ou_trace_has_approximately_correct_variance():
         sigma,
         rtol=0.10,
     )
+
+def test_ou_dd_zero_noise_has_unit_coherence():
+    """Zero OU noise must preserve coherence exactly."""
+
+    noise = OrnsteinUhlenbeckNoise(
+        sigma=0.0,
+        correlation_time=1000.0,
+    )
+
+    coherence = noise.coherence_under_dd(
+        pulse_times=np.array(
+            [
+                500.0,
+            ]
+        ),
+        total_time=1000.0,
+    )
+
+    np.testing.assert_allclose(
+        coherence,
+        1.0,
+        atol=1e-12,
+    )
+
+
+def test_ou_dd_coherence_is_physical():
+    """OU DD coherence must remain between zero and one."""
+
+    noise = OrnsteinUhlenbeckNoise(
+        sigma=0.0001,
+        correlation_time=1000.0,
+    )
+
+    coherence = noise.coherence_under_dd(
+        pulse_times=np.array(
+            [
+                250.0,
+                750.0,
+            ]
+        ),
+        total_time=1000.0,
+    )
+
+    assert (
+        0.0
+        <= coherence
+        <= 1.0
+    )
+def test_hahn_refocuses_slow_ou_noise():
+    """Hahn echo should suppress sufficiently slow OU dephasing."""
+
+    noise = OrnsteinUhlenbeckNoise(
+        sigma=0.001,
+        correlation_time=10000.0,
+    )
+
+    total_time = 1000.0
+
+    free_induction = noise.coherence_under_dd(
+        pulse_times=np.array(
+            [],
+            dtype=float,
+        ),
+        total_time=total_time,
+    )
+
+    hahn = noise.coherence_under_dd(
+        pulse_times=np.array(
+            [
+                total_time / 2.0,
+            ]
+        ),
+        total_time=total_time,
+    )
+
+    assert (
+        hahn
+        > free_induction
+    )

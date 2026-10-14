@@ -20,6 +20,13 @@ from .operators import (
     spin_operators,
 )
 
+from .nuclear_environment import (
+    Carbon13Spin,
+    ConditionalNuclearSubsystem,
+    IndependentNuclearEnvironment,
+    conditional_propagators,
+    subsystem_coherence,
+)
 
 __all__ = [
     "NVCenter",
@@ -32,4 +39,9 @@ __all__ = [
     "identity_for_spin",
     "build_hamiltonian",
     "eigensystem",
+    "Carbon13Spin",
+    "ConditionalNuclearSubsystem",
+    "IndependentNuclearEnvironment",
+    "conditional_propagators",
+    "subsystem_coherence",
 ]

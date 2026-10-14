@@ -34,6 +34,11 @@ from .dd_spectroscopy import (
     SingleCarbonDDSpectroscopy,
 )
 
+from .dd_spectroscopy_noise import (
+    NoisyDDSpectroscopyResult,
+    SingleCarbonNoisyDDSpectroscopy,
+)
+
 __all__ = [
     "EnergyLevels",
     "EnergyLevelResult",
@@ -51,4 +56,6 @@ __all__ = [
     "DDSpectroscopyResult",
     "SingleCarbon13",
     "SingleCarbonDDSpectroscopy",
+    "NoisyDDSpectroscopyResult",
+    "SingleCarbonNoisyDDSpectroscopy",
 ]

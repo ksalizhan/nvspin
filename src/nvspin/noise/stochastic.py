@@ -146,3 +146,181 @@ class OrnsteinUhlenbeckNoise:
             times,
             values,
         )
+
+    def coherence_under_dd(
+        self,
+        pulse_times: np.ndarray,
+        total_time: float,
+    ) -> float:
+        """
+        Exact ensemble coherence for OU longitudinal noise
+        under ideal instantaneous DD pulses.
+
+        The switching function y(t) changes sign at each
+        pulse time.
+
+        For zero-mean Gaussian noise,
+
+            L = exp[-Var(phi) / 2]
+
+        where
+
+            phi = 2*pi integral y(t) delta_f(t) dt.
+
+        The OU correlation function is
+
+            C(t - t')
+                = sigma^2
+                  exp(-|t - t'| / correlation_time).
+        """
+
+        if total_time < 0:
+            raise ValueError(
+                "total_time must be non-negative."
+            )
+
+        if total_time == 0:
+            return 1.0
+
+        pulse_times = np.asarray(
+            pulse_times,
+            dtype=float,
+        )
+
+        if np.any(
+            pulse_times <= 0.0
+        ):
+            raise ValueError(
+                "pulse_times must be positive."
+            )
+
+        if np.any(
+            pulse_times >= total_time
+        ):
+            raise ValueError(
+                "pulse_times must lie inside total_time."
+            )
+
+        if np.any(
+            np.diff(pulse_times) <= 0.0
+        ):
+            raise ValueError(
+                "pulse_times must be strictly increasing."
+            )
+
+        boundaries = np.concatenate(
+            (
+                [0.0],
+                pulse_times,
+                [total_time],
+            )
+        )
+
+        tau_c = (
+            self.correlation_time
+        )
+
+        # q(t) =
+        #
+        # integral_0^t
+        # y(s) exp[-(t-s)/tau_c] ds
+
+        q = 0.0
+
+        # Accumulates:
+        #
+        # integral_0^T y(t) q(t) dt
+
+        integral = 0.0
+
+        # Before the first pi pulse:
+        #
+        # y = +1
+
+        y = 1.0
+
+        for index in range(
+            len(boundaries) - 1
+        ):
+
+            delta = (
+                boundaries[index + 1]
+                - boundaries[index]
+            )
+
+            decay = np.exp(
+                -delta / tau_c
+            )
+
+            # Exact integral of y*q(t)
+            # across this interval.
+
+            integral += (
+                y
+                * q
+                * tau_c
+                * (
+                    1.0 - decay
+                )
+                +
+                tau_c
+                * delta
+                -
+                tau_c**2
+                * (
+                    1.0 - decay
+                )
+            )
+
+            # Exact update of q.
+
+            q = (
+                q
+                * decay
+                +
+                y
+                * tau_c
+                * (
+                    1.0 - decay
+                )
+            )
+
+            # Ideal pi pulse reverses the
+            # longitudinal coupling sign.
+
+            y *= -1.0
+
+        # Full symmetric double integral:
+        #
+        # Var(phi)
+        #
+        # = (2*pi)^2 sigma^2
+        #
+        #   * integral_0^T integral_0^T
+        #
+        #       y(t)y(t')
+        #       exp(-|t-t'|/tau_c)
+        #
+        #       dt dt'
+
+        phase_variance = (
+            (2.0 * np.pi) ** 2
+            * self.sigma**2
+            * 2.0
+            * integral
+        )
+
+        # Numerical roundoff can occasionally produce
+        # a tiny negative value.
+
+        phase_variance = max(
+            float(phase_variance),
+            0.0,
+        )
+
+        return float(
+            np.exp(
+                -0.5
+                * phase_variance
+            )
+        )
