@@ -4,6 +4,40 @@ import pytest
 from nvspin import NVCenter
 from nvspin.experiments import ODMR
 
+from nvspin.readout import (
+    NVOpticalCycle,
+    NVOpticalRates,
+)
+
+
+def build_optical_cycle():
+
+    rates = NVOpticalRates(
+        excitation=0.05,
+        radiative_ms0=0.077,
+        radiative_ms1=0.077,
+        isc_ms0=0.005,
+        isc_ms1=0.050,
+        singlet_to_ms0=0.004,
+        singlet_to_ms1=0.001,
+    )
+
+    return NVOpticalCycle(
+        rates
+    )
+
+
+def build_odmr(
+    nv,
+    **kwargs,
+):
+
+    return ODMR(
+        nv,
+        optical_cycle=build_optical_cycle(),
+        microwave_rate=0.01,
+        **kwargs,
+    )
 
 def test_odmr_output_shape():
 
@@ -12,7 +46,7 @@ def test_odmr_output_shape():
         B=[0, 0, 0.005],
     )
 
-    result = ODMR(
+    result = build_odmr(
         nv,
         points=1000,
     ).simulate()
@@ -33,7 +67,7 @@ def test_odmr_baseline():
         B=[0, 0, 0.005],
     )
 
-    result = ODMR(
+    result = build_odmr(
         nv,
         points=1000,
     ).simulate()
@@ -60,7 +94,7 @@ def test_pure_nv_transition_frequencies():
         nitrogen=None,
     )
 
-    experiment = ODMR(
+    experiment = build_odmr(
         nv,
         frequency_range=(
             2.5,
@@ -102,7 +136,7 @@ def test_pure_nv_transverse_strengths_equal():
         nitrogen=None,
     )
 
-    transitions = ODMR(
+    transitions = build_odmr(
         nv,
         microwave_direction=(1, 0, 0),
     ).calculate_transitions()
@@ -127,7 +161,7 @@ def test_n14_produces_hyperfine_transitions():
         B=[0, 0, 0.005],
     )
 
-    transitions = ODMR(
+    transitions = build_odmr(
         nv,
         frequency_range=(
             2.5,
@@ -151,7 +185,7 @@ def test_carbon_can_be_added():
         A_perp=30e-6,
     )
 
-    result = ODMR(
+    result = build_odmr(
         nv,
         points=500,
     ).simulate()
@@ -168,7 +202,7 @@ def test_invalid_frequency_range():
     with pytest.raises(
         ValueError
     ):
-        ODMR(
+        build_odmr(
             nv,
             frequency_range=(
                 3.0,
@@ -184,7 +218,7 @@ def test_invalid_linewidth():
     with pytest.raises(
         ValueError
     ):
-        ODMR(
+        build_odmr(
             nv,
             linewidth=0.0,
         )
@@ -197,7 +231,7 @@ def test_zero_microwave_direction():
     with pytest.raises(
         ValueError
     ):
-        ODMR(
+        build_odmr(
             nv,
             microwave_direction=(
                 0,
@@ -205,3 +239,152 @@ def test_zero_microwave_direction():
                 0,
             ),
         )
+def test_odmr_rate_matrix_conserves_population():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    rate_matrix = (
+        experiment._rate_matrix(
+            microwave_mixing=0.01
+        )
+    )
+
+    np.testing.assert_allclose(
+        np.sum(
+            rate_matrix,
+            axis=0,
+        ),
+        0.0,
+        atol=1e-12,
+    )
+
+
+def test_odmr_steady_state_is_physical():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    rate_matrix = (
+        experiment._rate_matrix(
+            microwave_mixing=0.01
+        )
+    )
+
+    populations = (
+        experiment._steady_state(
+            rate_matrix
+        )
+    )
+
+    np.testing.assert_allclose(
+        np.sum(
+            populations
+        ),
+        1.0,
+        atol=1e-12,
+    )
+
+    assert np.all(
+        populations >= -1e-12
+    )
+
+    assert np.all(
+        populations <= 1.0 + 1e-12
+    )
+
+
+def test_zero_microwave_rate_gives_flat_odmr():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = ODMR(
+        nv,
+        optical_cycle=build_optical_cycle(),
+        microwave_rate=0.0,
+        points=500,
+    )
+
+    result = experiment.simulate()
+
+    np.testing.assert_allclose(
+        result.fluorescence,
+        1.0,
+        atol=1e-12,
+    )
+
+
+def test_spin_dependent_isc_produces_odmr_dip():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    result = build_odmr(
+        nv,
+        points=1000,
+        frequency_range=(
+            2.65,
+            3.10,
+        ),
+    ).simulate()
+
+    assert np.min(
+        result.fluorescence
+    ) < 1.0 - 1e-8
+
+
+def test_spin_symmetric_optical_cycle_has_no_odmr_contrast():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    rates = NVOpticalRates(
+        excitation=0.05,
+
+        radiative_ms0=0.077,
+        radiative_ms1=0.077,
+
+        isc_ms0=0.020,
+        isc_ms1=0.020,
+
+        singlet_to_ms0=0.002,
+        singlet_to_ms1=0.002,
+    )
+
+    optical_cycle = (
+        NVOpticalCycle(
+            rates
+        )
+    )
+
+    result = ODMR(
+        nv,
+        optical_cycle=optical_cycle,
+        microwave_rate=0.01,
+        points=500,
+    ).simulate()
+
+    np.testing.assert_allclose(
+        result.fluorescence,
+        1.0,
+        atol=1e-10,
+    )
