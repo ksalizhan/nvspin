@@ -43,11 +43,15 @@ class ODMRTransition:
         Transition frequency in GHz.
 
     strength
-        Relative microwave transition strength.
+        Microwave transition strength
+
+            |<f| n_MW . S |i>|^2.
 
     population_weight
-        Initial-state population weight used in the
-        microwave spectral response.
+        Initial-state spectral weight.
+
+        For initial_manifold="ms0", this is determined by
+        the ms=0 character of the initial eigenstate.
     """
 
     initial_state: int
@@ -90,22 +94,55 @@ class ODMRResult:
 class ODMR:
     """
     Continuous-wave ODMR simulator using a five-level
-    optical rate-equation model.
+    optical rate-equation model and a Bloch-derived
+    microwave transition rate.
 
-    Transition frequencies and microwave transition strengths
-    are calculated from the full NV spin Hamiltonian.
+    The spin Hamiltonian is diagonalized exactly.
 
-    The microwave spectrum determines a frequency-dependent
-    ground-state mixing rate,
+    For each microwave-accessible transition,
 
-        W(f) = microwave_rate * A(f),
+        f_ij = E_j - E_i,
 
-    where A(f) contains the Hamiltonian transition
-    frequencies, microwave matrix elements, and Lorentzian
-    broadening.
+    and
 
-    At every microwave frequency, the optical steady state is
-    obtained by solving
+        M_ij
+        =
+        |<j| n_MW . S |i>|^2
+
+    are calculated from the complete spin Hamiltonian.
+
+    A reference Rabi frequency is supplied by the user.
+    The transition-specific Rabi frequency is determined
+    from the microwave matrix element.
+
+    The frequency-dependent microwave-induced population
+    mixing rate is
+
+        W_ij(f)
+        =
+        (2*pi*Omega_ij)^2 T2
+        ----------------------------------
+        2 [1 + (2*pi*Delta_ij*T2)^2]
+
+    where
+
+        Delta_ij = f - f_ij.
+
+    Frequencies are in GHz and times are in ns, so
+
+        GHz * ns = dimensionless.
+
+    The total effective microwave population-transfer rate is
+
+        W(f)
+        =
+        sum_ij
+        p_i^spec W_ij(f).
+
+    This rate is then coupled to the five-level optical
+    population model.
+
+    At every microwave frequency the code solves
 
         K(f) p_ss(f) = 0
 
@@ -113,7 +150,7 @@ class ODMR:
 
         sum(p_ss) = 1.
 
-    The five optical populations are ordered as
+    The optical populations are ordered as
 
         [
             g_ms0,
@@ -123,16 +160,29 @@ class ODMR:
             singlet,
         ].
 
-    The emitted fluorescence rate is then
+    Fluorescence is
 
         F(f)
         =
-        k_r0 * p_e0(f)
+        k_r0 p_e0(f)
         +
-        k_r1 * p_e1(f).
+        k_r1 p_e1(f).
 
-    The returned fluorescence is normalized so that the
-    maximum fluorescence is one.
+    No phenomenological ODMR contrast is supplied.
+
+    No independent phenomenological ODMR linewidth is
+    supplied.
+
+    No independent microwave population-mixing rate is
+    supplied.
+
+    Instead, the weak-drive homogeneous microwave response
+    is determined by
+
+        rabi_frequency
+        T2
+        transition frequency
+        microwave matrix element.
 
     Parameters
     ----------
@@ -155,12 +205,35 @@ class ODMR:
 
         and are assumed to have units of inverse ns.
 
-    microwave_rate
-        Maximum effective microwave-induced ground-state
-        population-mixing rate in inverse ns.
+    rabi_frequency
+        Reference resonant Rabi frequency in GHz.
 
-        This sets the overall microwave drive strength in the
-        rate-equation model.
+        This is defined for a reference allowed electronic
+        transition whose microwave matrix-element strength
+        is 1/2.
+
+        For a transition with strength M_ij,
+
+            Omega_ij
+            =
+            rabi_frequency
+            * sqrt(M_ij / 0.5).
+
+        Thus a pure spin-1 transition driven transverse to
+        the NV axis has Omega_ij approximately equal to the
+        requested rabi_frequency.
+
+    T2
+        Homogeneous transverse coherence time in ns.
+
+        In the weak-drive limit, the corresponding
+        homogeneous Lorentzian FWHM is
+
+            Gamma
+            =
+            1 / (pi T2)
+
+        in ordinary-frequency units.
 
     frequency_range
         Microwave-frequency range in GHz.
@@ -168,50 +241,59 @@ class ODMR:
     points
         Number of microwave-frequency points.
 
-    linewidth
-        Lorentzian full width at half maximum (FWHM), GHz.
-
     microwave_direction
         Microwave magnetic-field direction in the NV frame.
 
     strength_cutoff
-        Ignore transitions with relative microwave strength
-        below this value.
+        Ignore transitions whose microwave matrix-element
+        strength is below this value.
 
     initial_manifold
-        Currently "ms0" or "all".
+        "ms0" or "all".
 
         "ms0" weights transitions according to the ms=0
         character of the initial eigenstate.
 
-        "all" assigns equal initial spectral weight to all
+        "all" assigns equal spectral weight to all
         eigenstates.
 
     Notes
     -----
-    The optical rates are constant during each steady-state
-    calculation.
+    This model is more physical than prescribing an
+    independent linewidth and microwave mixing rate.
 
-    What changes across the ODMR frequency sweep is the
-    microwave-induced mixing rate W(f).
+    However, it is still an effective population model.
 
-    Therefore the ODMR contrast is not supplied as an input.
-    It emerges from the competition between microwave mixing,
-    optical excitation, radiative decay, intersystem crossing,
-    and singlet return.
+    The microwave coherence has been adiabatically eliminated
+    to obtain W_ij(f).
+
+    A future full optical-Bloch or Lindblad model would retain
+    the microwave coherence explicitly.
     """
+
+    # For a pure spin-1 system with transverse drive,
+    #
+    # |<0|Sx|+1>|^2
+    # =
+    # |<0|Sx|-1>|^2
+    # =
+    # 1/2.
+    #
+    # We therefore define the user-supplied rabi_frequency
+    # relative to this transition strength.
+    REFERENCE_STRENGTH = 0.5
 
     def __init__(
         self,
         system: NVCenter,
         optical_cycle: NVOpticalCycle,
-        microwave_rate: float,
+        rabi_frequency: float,
+        T2: float,
         frequency_range: tuple[float, float] = (
             2.5,
             3.2,
         ),
         points: int = 4000,
-        linewidth: float = 0.002,
         microwave_direction: tuple[
             float,
             float,
@@ -238,14 +320,14 @@ class ODMR:
                 "points must be at least 2."
             )
 
-        if linewidth <= 0:
+        if rabi_frequency < 0.0:
             raise ValueError(
-                "linewidth must be positive."
+                "rabi_frequency must be non-negative."
             )
 
-        if microwave_rate < 0:
+        if T2 <= 0.0:
             raise ValueError(
-                "microwave_rate must be non-negative."
+                "T2 must be positive."
             )
 
         direction = np.asarray(
@@ -291,8 +373,12 @@ class ODMR:
             optical_cycle
         )
 
-        self.microwave_rate = float(
-            microwave_rate
+        self.rabi_frequency = float(
+            rabi_frequency
+        )
+
+        self.T2 = float(
+            T2
         )
 
         self.frequency_range = (
@@ -302,10 +388,6 @@ class ODMR:
 
         self.points = int(
             points
-        )
-
-        self.linewidth = float(
-            linewidth
         )
 
         self.microwave_direction = (
@@ -389,17 +471,11 @@ class ODMR:
         self,
     ) -> ComplexArray:
         """
-        Return the dimensionless microwave coupling operator.
+        Return the dimensionless microwave coupling operator
 
-        For microwave-field direction n,
+            n_MW . S
 
-            H1 proportional to n . S.
-
-        This operator determines the relative microwave
-        transition matrix elements.
-
-        The overall CW microwave population-transfer scale is
-        supplied separately through microwave_rate.
+        in the complete electron+nuclear Hilbert space.
         """
 
         sx, sy, sz = (
@@ -453,20 +529,14 @@ class ODMR:
         states: ComplexArray,
     ) -> FloatArray:
         """
-        Construct initial spectral weights.
+        Construct spectral transition weights.
 
-        For initial_manifold="ms0", the transition spectral
-        weight is distributed according to each eigenstate's
-        ms=0 character.
+        These weights are used to determine how strongly each
+        Hamiltonian transition contributes to the effective
+        microwave population-transfer rate.
 
-        For initial_manifold="all", all eigenstates receive
-        equal spectral weight.
-
-        These weights are used only to construct the
-        microwave spectral response A(f).
-
-        The actual optical populations are subsequently
-        calculated from the rate equations.
+        The actual optical steady-state populations are solved
+        separately from the five-level rate equations.
         """
 
         dimension = (
@@ -613,99 +683,159 @@ class ODMR:
         return transitions
 
     # =========================================================
-    # Lorentzian
+    # Transition-specific Rabi frequency
     # =========================================================
 
-    def _lorentzian(
+    def _transition_rabi_frequency(
         self,
-        frequencies: FloatArray,
-        center: float,
-    ) -> FloatArray:
+        transition: ODMRTransition,
+    ) -> float:
         """
-        Return a unit-height Lorentzian centered at center.
+        Return the Rabi frequency for one transition in GHz.
 
-        linewidth is the full width at half maximum.
+        The user-supplied rabi_frequency corresponds to an
+        allowed pure electronic spin-1 transverse transition
+        with matrix-element strength 1/2.
+
+        Therefore
+
+            Omega_ij
+            =
+            Omega_ref
+            sqrt(M_ij / (1/2)).
         """
 
-        half_width = (
-            self.linewidth
-            / 2.0
-        )
+        if transition.strength <= 0.0:
+            return 0.0
 
-        return (
-            half_width**2
-            /
-            (
-                (
-                    frequencies
-                    - center
-                ) ** 2
-                +
-                half_width**2
+        return float(
+            self.rabi_frequency
+            * np.sqrt(
+                transition.strength
+                / self.REFERENCE_STRENGTH
             )
         )
 
     # =========================================================
-    # Microwave spectral response
+    # Bloch-derived microwave transition rate
     # =========================================================
 
-    def _microwave_response(
+    def _transition_mixing_rate(
         self,
-        frequencies: FloatArray,
+        frequency: float,
+        transition: ODMRTransition,
+    ) -> float:
+        """
+        Return the effective microwave population-transfer rate
+        for one transition.
+
+        Frequencies are stored in GHz = 1/ns.
+
+        The angular Rabi frequency is
+
+            Omega_w = 2*pi*Omega,
+
+        and angular detuning is
+
+            Delta_w = 2*pi*(f - f_ij).
+
+        After adiabatic elimination of the transverse
+        microwave coherence,
+
+            W_ij
+            =
+            Omega_w^2 T2
+            -----------------------------
+            2 [1 + Delta_w^2 T2^2].
+
+        The result has units of inverse ns.
+        """
+
+        omega = (
+            self._transition_rabi_frequency(
+                transition
+            )
+        )
+
+        if omega == 0.0:
+            return 0.0
+
+        detuning = (
+            float(frequency)
+            - transition.frequency
+        )
+
+        omega_angular = (
+            2.0
+            * np.pi
+            * omega
+        )
+
+        detuning_angular = (
+            2.0
+            * np.pi
+            * detuning
+        )
+
+        denominator = (
+            2.0
+            * (
+                1.0
+                +
+                (
+                    detuning_angular
+                    * self.T2
+                ) ** 2
+            )
+        )
+
+        return float(
+            omega_angular**2
+            * self.T2
+            / denominator
+        )
+
+    # =========================================================
+    # Total microwave mixing rate
+    # =========================================================
+
+    def _microwave_mixing_rate(
+        self,
+        frequency: float,
         transitions: list[
             ODMRTransition
         ],
-    ) -> FloatArray:
+    ) -> float:
         """
-        Construct normalized microwave response A(f).
+        Return the total effective microwave-induced
+        ground-state population-transfer rate W(f).
 
-        The response contains
+        Importantly, the transition spectrum is NOT normalized
+        to its maximum.
 
-            transition frequency,
-            microwave matrix element,
-            initial spectral weight,
-            Lorentzian broadening.
-
-        The actual microwave-induced population mixing is
-
-            W(f)
-            =
-            microwave_rate * A(f).
+        Absolute Hamiltonian transition strengths therefore
+        remain in the model.
         """
 
-        response = np.zeros_like(
-            frequencies
-        )
+        total_rate = 0.0
 
         for transition in transitions:
 
-            weight = (
-                transition.strength
-                * transition.population_weight
-            )
-
-            response += (
-                weight
-                * self._lorentzian(
-                    frequencies,
-                    transition.frequency,
+            transition_rate = (
+                self._transition_mixing_rate(
+                    frequency,
+                    transition,
                 )
             )
 
-        maximum = float(
-            np.max(
-                response
+            total_rate += (
+                transition.population_weight
+                * transition_rate
             )
+
+        return float(
+            total_rate
         )
-
-        if maximum > 0.0:
-
-            response = (
-                response
-                / maximum
-            )
-
-        return response
 
     # =========================================================
     # Five-level optical rate matrix
@@ -854,7 +984,6 @@ class ODMR:
             )
         )
 
-        # Remove tiny floating-point roundoff.
         populations[
             np.abs(
                 populations
@@ -914,8 +1043,8 @@ class ODMR:
             +
             k_r1 p_e1.
 
-        This is emitted fluorescence before detector
-        collection efficiency or background counts.
+        Detector collection efficiency and background counts
+        are not included here.
         """
 
         rates = (
@@ -939,6 +1068,33 @@ class ODMR:
         )
 
     # =========================================================
+    # Useful derived quantities
+    # =========================================================
+
+    @property
+    def weak_drive_fwhm(
+        self,
+    ) -> float:
+        """
+        Homogeneous weak-drive FWHM in GHz.
+
+        For the Bloch-derived response,
+
+            Gamma
+            =
+            1 / (pi T2).
+        """
+
+        return float(
+            1.0
+            /
+            (
+                np.pi
+                * self.T2
+            )
+        )
+
+    # =========================================================
     # Simulation
     # =========================================================
 
@@ -950,22 +1106,23 @@ class ODMR:
 
         For every microwave frequency:
 
-        1. calculate the Hamiltonian-derived microwave
-           response A(f);
+        1. calculate exact Hamiltonian transition frequencies
+           and microwave matrix elements;
 
-        2. convert it into the population-mixing rate
+        2. calculate each transition-specific Rabi frequency;
 
-               W(f)
-               =
-               microwave_rate * A(f);
+        3. derive the effective microwave transition rate from
+           rabi_frequency, T2, and detuning;
 
-        3. construct the five-level rate matrix K(f);
+        4. sum the transition contributions to obtain W(f);
 
-        4. solve
+        5. construct the five-level optical rate matrix;
+
+        6. solve
 
                K(f) p_ss(f) = 0;
 
-        5. calculate
+        7. calculate
 
                F(f)
                =
@@ -973,8 +1130,10 @@ class ODMR:
                +
                k_r1 p_e1(f).
 
-        The final fluorescence is normalized to its maximum
-        value for convenient plotting.
+        No independent phenomenological ODMR linewidth is
+        imposed.
+
+        No fixed ODMR contrast is imposed.
         """
 
         frequencies = np.linspace(
@@ -987,28 +1146,21 @@ class ODMR:
             self.calculate_transitions()
         )
 
-        microwave_response = (
-            self._microwave_response(
-                frequencies,
-                transitions,
-            )
-        )
-
         fluorescence = np.zeros_like(
             frequencies
         )
 
         for (
             index,
-            spectral_weight,
+            frequency,
         ) in enumerate(
-            microwave_response
+            frequencies
         ):
 
             microwave_mixing = (
-                self.microwave_rate
-                * float(
-                    spectral_weight
+                self._microwave_mixing_rate(
+                    float(frequency),
+                    transitions,
                 )
             )
 
@@ -1032,9 +1184,9 @@ class ODMR:
 
         # Normalize only for presentation.
         #
-        # The ODMR dip itself has already emerged from
-        # the rate equations. No contrast parameter is
-        # imposed here.
+        # The ODMR contrast and spectral structure have
+        # already emerged from the Hamiltonian, microwave
+        # response, and optical rate equations.
         maximum = float(
             np.max(
                 fluorescence

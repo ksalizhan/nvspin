@@ -10,6 +10,11 @@ from nvspin.readout import (
 )
 
 
+# ============================================================
+# Test helpers
+# ============================================================
+
+
 def build_optical_cycle():
 
     rates = NVOpticalRates(
@@ -35,9 +40,28 @@ def build_odmr(
     return ODMR(
         nv,
         optical_cycle=build_optical_cycle(),
-        microwave_rate=0.01,
+
+        # 5 MHz reference Rabi frequency.
+        rabi_frequency=0.005,
+
+        # Homogeneous transverse coherence time.
+        #
+        # T2 = 300 ns corresponds to weak-drive
+        # homogeneous FWHM
+        #
+        #     1 / (pi T2)
+        #
+        # ~= 1.06 MHz.
+        T2=300.0,
+
         **kwargs,
     )
+
+
+# ============================================================
+# Basic output
+# ============================================================
+
 
 def test_odmr_output_shape():
 
@@ -79,6 +103,11 @@ def test_odmr_baseline():
     assert np.min(
         result.fluorescence
     ) >= 0.0
+
+
+# ============================================================
+# Hamiltonian / transition tests
+# ============================================================
 
 
 def test_pure_nv_transition_frequencies():
@@ -138,7 +167,11 @@ def test_pure_nv_transverse_strengths_equal():
 
     transitions = build_odmr(
         nv,
-        microwave_direction=(1, 0, 0),
+        microwave_direction=(
+            1,
+            0,
+            0,
+        ),
     ).calculate_transitions()
 
     strengths = sorted(
@@ -195,6 +228,11 @@ def test_carbon_can_be_added():
     ) > 0
 
 
+# ============================================================
+# Constructor validation
+# ============================================================
+
+
 def test_invalid_frequency_range():
 
     nv = NVCenter()
@@ -211,16 +249,33 @@ def test_invalid_frequency_range():
         )
 
 
-def test_invalid_linewidth():
+def test_invalid_rabi_frequency():
 
     nv = NVCenter()
 
     with pytest.raises(
         ValueError
     ):
-        build_odmr(
+        ODMR(
             nv,
-            linewidth=0.0,
+            optical_cycle=build_optical_cycle(),
+            rabi_frequency=-0.001,
+            T2=300.0,
+        )
+
+
+def test_invalid_t2():
+
+    nv = NVCenter()
+
+    with pytest.raises(
+        ValueError
+    ):
+        ODMR(
+            nv,
+            optical_cycle=build_optical_cycle(),
+            rabi_frequency=0.005,
+            T2=0.0,
         )
 
 
@@ -239,6 +294,13 @@ def test_zero_microwave_direction():
                 0,
             ),
         )
+
+
+# ============================================================
+# Optical rate-equation tests
+# ============================================================
+
+
 def test_odmr_rate_matrix_conserves_population():
 
     nv = NVCenter(
@@ -298,15 +360,221 @@ def test_odmr_steady_state_is_physical():
     )
 
     assert np.all(
-        populations >= -1e-12
+        populations
+        >= -1e-12
     )
 
     assert np.all(
-        populations <= 1.0 + 1e-12
+        populations
+        <= 1.0 + 1e-12
     )
 
 
-def test_zero_microwave_rate_gives_flat_odmr():
+# ============================================================
+# T2-derived microwave response
+# ============================================================
+
+
+def test_t2_sets_weak_drive_linewidth():
+
+    nv = NVCenter(
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    expected = (
+        1.0
+        /
+        (
+            np.pi
+            * 300.0
+        )
+    )
+
+    np.testing.assert_allclose(
+        experiment.weak_drive_fwhm,
+        expected,
+        atol=1e-15,
+    )
+
+
+def test_transition_rabi_frequency_for_pure_nv():
+
+    nv = NVCenter(
+        E=0.0,
+        B=[0, 0, 0.005],
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv,
+        microwave_direction=(
+            1.0,
+            0.0,
+            0.0,
+        ),
+    )
+
+    transitions = (
+        experiment.calculate_transitions()
+    )
+
+    assert len(
+        transitions
+    ) == 2
+
+    for transition in transitions:
+
+        omega = (
+            experiment
+            ._transition_rabi_frequency(
+                transition
+            )
+        )
+
+        np.testing.assert_allclose(
+            omega,
+            experiment.rabi_frequency,
+            atol=1e-12,
+        )
+
+
+def test_transition_mixing_rate_is_maximal_on_resonance():
+
+    nv = NVCenter(
+        E=0.0,
+        B=[0, 0, 0.005],
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    on_resonance = (
+        experiment._transition_mixing_rate(
+            transition.frequency,
+            transition,
+        )
+    )
+
+    off_resonance = (
+        experiment._transition_mixing_rate(
+            transition.frequency
+            + 0.01,
+            transition,
+        )
+    )
+
+    assert (
+        on_resonance
+        > off_resonance
+    )
+
+
+def test_transition_mixing_rate_is_symmetric_in_detuning():
+
+    nv = NVCenter(
+        E=0.0,
+        B=[0, 0, 0.005],
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    detuning = 0.003
+
+    lower = (
+        experiment._transition_mixing_rate(
+            transition.frequency
+            - detuning,
+            transition,
+        )
+    )
+
+    upper = (
+        experiment._transition_mixing_rate(
+            transition.frequency
+            + detuning,
+            transition,
+        )
+    )
+
+    np.testing.assert_allclose(
+        lower,
+        upper,
+        atol=1e-15,
+    )
+
+
+def test_transition_mixing_rate_half_max_at_t2_half_width():
+
+    nv = NVCenter(
+        E=0.0,
+        B=[0, 0, 0.005],
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    on_resonance = (
+        experiment._transition_mixing_rate(
+            transition.frequency,
+            transition,
+        )
+    )
+
+    half_width = (
+        1.0
+        /
+        (
+            2.0
+            * np.pi
+            * experiment.T2
+        )
+    )
+
+    at_half_width = (
+        experiment._transition_mixing_rate(
+            transition.frequency
+            + half_width,
+            transition,
+        )
+    )
+
+    np.testing.assert_allclose(
+        at_half_width,
+        0.5 * on_resonance,
+        rtol=1e-12,
+        atol=1e-15,
+    )
+
+
+# ============================================================
+# ODMR physics
+# ============================================================
+
+
+def test_zero_rabi_frequency_gives_flat_odmr():
 
     nv = NVCenter(
         nitrogen=None,
@@ -316,11 +584,14 @@ def test_zero_microwave_rate_gives_flat_odmr():
     experiment = ODMR(
         nv,
         optical_cycle=build_optical_cycle(),
-        microwave_rate=0.0,
+        rabi_frequency=0.0,
+        T2=300.0,
         points=500,
     )
 
-    result = experiment.simulate()
+    result = (
+        experiment.simulate()
+    )
 
     np.testing.assert_allclose(
         result.fluorescence,
@@ -379,7 +650,8 @@ def test_spin_symmetric_optical_cycle_has_no_odmr_contrast():
     result = ODMR(
         nv,
         optical_cycle=optical_cycle,
-        microwave_rate=0.01,
+        rabi_frequency=0.005,
+        T2=300.0,
         points=500,
     ).simulate()
 

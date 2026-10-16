@@ -1,28 +1,33 @@
 """
-Rate-equation CW-ODMR simulation for an NV- center.
+CW-ODMR simulation for an NV- center.
 
-The NV axis and static magnetic field are aligned.
+This version uses:
 
-The spin spectrum is generated from:
-    - exact Hamiltonian eigenstates
-    - microwave transition matrix elements
-    - Lorentzian microwave linewidths
+    - exact spin-Hamiltonian eigenstates
+    - exact microwave transition matrix elements
+    - a physical reference Rabi frequency
+    - homogeneous transverse coherence time T2
+    - Bloch-derived microwave population-transfer rates
+    - five-level optical rate-equation fluorescence
 
-The ODMR fluorescence contrast is NOT imposed
-phenomenologically.
+There is NO:
 
-Instead, at every microwave frequency the code:
-    1. calculates the microwave spectral response,
-    2. converts it into a microwave population-mixing rate,
-    3. solves the five-level optical steady-state rate equations,
-    4. calculates fluorescence from the radiative excited-state
-       populations.
+    - fixed ODMR contrast
+    - independently prescribed Lorentzian linewidth
+    - independently prescribed microwave population-mixing rate
+
+Instead,
+
+    Omega + T2 + detuning
+        -> microwave transition rate
+        -> optical steady state
+        -> fluorescence
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from nvspin import NVCenter
-
 from nvspin.experiments import ODMR
 
 from nvspin.readout import (
@@ -52,14 +57,6 @@ def main():
     # =========================================================
     #
     # Units: 1/ns
-    #
-    # These rates remain constant during each steady-state
-    # calculation.
-    #
-    # The populations change dynamically / with steady state.
-    #
-    # The microwave mixing rate changes across the ODMR
-    # frequency sweep.
     # =========================================================
 
     rates = NVOpticalRates(
@@ -80,18 +77,35 @@ def main():
     )
 
     # =========================================================
-    # ODMR experiment
+    # Microwave / coherence parameters
     # =========================================================
     #
-    # There is deliberately NO contrast parameter.
+    # rabi_frequency:
     #
-    # The ODMR contrast emerges from the five-level
-    # optical rate equations.
+    #     ordinary frequency in GHz
     #
-    # microwave_rate sets the maximum effective
-    # microwave-induced population mixing rate W_max.
+    #     0.005 GHz = 5 MHz
     #
-    # Units: 1/ns
+    # T2:
+    #
+    #     homogeneous transverse coherence time in ns
+    #
+    # For the current Bloch-derived response:
+    #
+    #     Gamma_FWHM = 1 / (pi T2)
+    #
+    # so T2 = 300 ns gives approximately
+    #
+    #     Gamma_FWHM = 1.061 MHz
+    #
+    # in the weak-drive limit.
+    # =========================================================
+
+    rabi_frequency = 0.005
+    T2 = 300.0
+
+    # =========================================================
+    # ODMR experiment
     # =========================================================
 
     experiment = ODMR(
@@ -99,7 +113,9 @@ def main():
 
         optical_cycle=optical_cycle,
 
-        microwave_rate=0.01,
+        rabi_frequency=rabi_frequency,
+
+        T2=T2,
 
         frequency_range=(
             2.65,
@@ -107,8 +123,6 @@ def main():
         ),
 
         points=6000,
-
-        linewidth=0.001,
 
         microwave_direction=(
             1.0,
@@ -118,13 +132,40 @@ def main():
     )
 
     # =========================================================
+    # Derived weak-drive linewidth
+    # =========================================================
+
+    print()
+    print(
+        "Microwave / coherence parameters"
+    )
+    print(
+        "--------------------------------"
+    )
+
+    print(
+        f"Reference Rabi frequency = "
+        f"{1000.0 * rabi_frequency:.3f} MHz"
+    )
+
+    print(
+        f"T2                       = "
+        f"{T2:.3f} ns"
+    )
+
+    print(
+        f"Weak-drive FWHM          = "
+        f"{1000.0 * experiment.weak_drive_fwhm:.3f} MHz"
+    )
+
+    # =========================================================
     # Run simulation
     # =========================================================
 
     result = experiment.simulate()
 
     # =========================================================
-    # Print strongest transitions
+    # Strongest transitions
     # =========================================================
 
     print()
@@ -148,15 +189,19 @@ def main():
         )
 
     # =========================================================
-    # Extract rate-equation ODMR contrast
+    # Emergent ODMR contrast
     # =========================================================
 
-    fluorescence_off = (
-        result.fluorescence.max()
+    fluorescence_off = float(
+        np.max(
+            result.fluorescence
+        )
     )
 
-    fluorescence_on = (
-        result.fluorescence.min()
+    fluorescence_on = float(
+        np.min(
+            result.fluorescence
+        )
     )
 
     contrast = (
@@ -219,8 +264,9 @@ def main():
     plt.title(
         r"NV$^-$ CW-ODMR"
         "\n"
-        r"Five-level rate-equation readout, "
-        r"$B=5$ mT, $\mathbf{B}\parallel$ NV"
+        r"$B=5$ mT, "
+        r"$\mathbf{B}\parallel$ NV, "
+        r"$\Omega/2\pi=5$ MHz"
     )
 
     plt.grid(
