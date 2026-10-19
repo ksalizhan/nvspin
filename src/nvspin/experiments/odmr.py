@@ -49,9 +49,6 @@ class ODMRTransition:
 
     population_weight
         Initial-state spectral weight.
-
-        For initial_manifold="ms0", this is determined by
-        the ms=0 character of the initial eigenstate.
     """
 
     initial_state: int
@@ -73,9 +70,6 @@ class ODMRResult:
         self,
         number: int = 10,
     ) -> list[ODMRTransition]:
-        """
-        Return transitions ordered by spectral weight.
-        """
 
         return sorted(
             self.transitions,
@@ -93,96 +87,56 @@ class ODMRResult:
 
 class ODMR:
     """
-    Continuous-wave ODMR simulator using a five-level
-    optical rate-equation model and a Bloch-derived
-    microwave transition rate.
+    Continuous-wave ODMR simulator using coupled coherent
+    microwave dynamics and a five-level optical cycle.
 
-    The spin Hamiltonian is diagonalized exactly.
+    The model contains five optical populations,
 
-    For each microwave-accessible transition,
+        p_g0
+        p_g1
+        p_e0
+        p_e1
+        p_s
 
-        f_ij = E_j - E_i,
+    together with the two real components of the ground-state
+    microwave coherence,
 
-    and
+        u = 2 Re(rho_01)
+        v = 2 Im(rho_01).
 
-        M_ij
-        =
-        |<j| n_MW . S |i>|^2
+    The complete steady-state variable is
 
-    are calculated from the complete spin Hamiltonian.
-
-    A reference Rabi frequency is supplied by the user.
-    The transition-specific Rabi frequency is determined
-    from the microwave matrix element.
-
-    The frequency-dependent microwave-induced population
-    mixing rate is
-
-        W_ij(f)
-        =
-        (2*pi*Omega_ij)^2 T2
-        ----------------------------------
-        2 [1 + (2*pi*Delta_ij*T2)^2]
-
-    where
-
-        Delta_ij = f - f_ij.
-
-    Frequencies are in GHz and times are in ns, so
-
-        GHz * ns = dimensionless.
-
-    The total effective microwave population-transfer rate is
-
-        W(f)
-        =
-        sum_ij
-        p_i^spec W_ij(f).
-
-    This rate is then coupled to the five-level optical
-    population model.
-
-    At every microwave frequency the code solves
-
-        K(f) p_ss(f) = 0
-
-    subject to
-
-        sum(p_ss) = 1.
-
-    The optical populations are ordered as
-
+        x =
         [
-            g_ms0,
-            g_ms1,
-            e_ms0,
-            e_ms1,
-            singlet,
+            p_g0,
+            p_g1,
+            p_e0,
+            p_e1,
+            p_s,
+            u,
+            v,
         ].
 
-    Fluorescence is
+    For each microwave-accessible Hamiltonian transition, the
+    transition frequency and matrix element are calculated
+    exactly from the spin Hamiltonian.
 
-        F(f)
+    The transition-specific Rabi frequency is
+
+        Omega_ij
         =
-        k_r0 p_e0(f)
-        +
-        k_r1 p_e1(f).
+        Omega_ref
+        sqrt(M_ij / M_ref).
 
     No phenomenological ODMR contrast is supplied.
 
-    No independent phenomenological ODMR linewidth is
+    No phenomenological linewidth is supplied.
+
+    No effective microwave population-transfer rate W is
     supplied.
 
-    No independent microwave population-mixing rate is
-    supplied.
-
-    Instead, the weak-drive homogeneous microwave response
-    is determined by
-
-        rabi_frequency
-        T2
-        transition frequency
-        microwave matrix element.
+    Instead, microwave saturation and the frequency response
+    emerge from the coherent Bloch dynamics.
 
     Parameters
     ----------
@@ -190,97 +144,42 @@ class ODMR:
         NVCenter spin system.
 
     optical_cycle
-        NVOpticalCycle containing the optical transition
-        rates.
-
-        The optical rates are expected to contain
-
-            excitation
-            radiative_ms0
-            radiative_ms1
-            isc_ms0
-            isc_ms1
-            singlet_to_ms0
-            singlet_to_ms1
-
-        and are assumed to have units of inverse ns.
+        Five-level NV optical-cycle model.
 
     rabi_frequency
         Reference resonant Rabi frequency in GHz.
 
-        This is defined for a reference allowed electronic
-        transition whose microwave matrix-element strength
-        is 1/2.
+        A pure spin-1 transverse transition with
 
-        For a transition with strength M_ij,
+            |<f|Sx|i>|^2 = 1/2
 
-            Omega_ij
-            =
-            rabi_frequency
-            * sqrt(M_ij / 0.5).
-
-        Thus a pure spin-1 transition driven transverse to
-        the NV axis has Omega_ij approximately equal to the
-        requested rabi_frequency.
+        has this Rabi frequency.
 
     T2
-        Homogeneous transverse coherence time in ns.
+        Intrinsic ground-state transverse coherence time in ns.
 
-        In the weak-drive limit, the corresponding
-        homogeneous Lorentzian FWHM is
+        This represents the non-optical contribution to
+        transverse decoherence.
 
-            Gamma
-            =
-            1 / (pi T2)
-
-        in ordinary-frequency units.
+        Optical excitation contributes additional ground-state
+        coherence loss during CW illumination.
 
     frequency_range
-        Microwave-frequency range in GHz.
+        Microwave frequency range in GHz.
 
     points
-        Number of microwave-frequency points.
+        Number of frequency points.
 
     microwave_direction
         Microwave magnetic-field direction in the NV frame.
 
     strength_cutoff
-        Ignore transitions whose microwave matrix-element
-        strength is below this value.
+        Ignore transitions weaker than this value.
 
     initial_manifold
         "ms0" or "all".
-
-        "ms0" weights transitions according to the ms=0
-        character of the initial eigenstate.
-
-        "all" assigns equal spectral weight to all
-        eigenstates.
-
-    Notes
-    -----
-    This model is more physical than prescribing an
-    independent linewidth and microwave mixing rate.
-
-    However, it is still an effective population model.
-
-    The microwave coherence has been adiabatically eliminated
-    to obtain W_ij(f).
-
-    A future full optical-Bloch or Lindblad model would retain
-    the microwave coherence explicitly.
     """
 
-    # For a pure spin-1 system with transverse drive,
-    #
-    # |<0|Sx|+1>|^2
-    # =
-    # |<0|Sx|-1>|^2
-    # =
-    # 1/2.
-    #
-    # We therefore define the user-supplied rabi_frequency
-    # relative to this transition strength.
     REFERENCE_STRENGTH = 0.5
 
     def __init__(
@@ -420,7 +319,7 @@ class ODMR:
         ]
 
     # =========================================================
-    # Electronic operators in full Hilbert space
+    # Electronic operators
     # =========================================================
 
     def _electron_operators(
@@ -470,13 +369,6 @@ class ODMR:
     def microwave_operator(
         self,
     ) -> ComplexArray:
-        """
-        Return the dimensionless microwave coupling operator
-
-            n_MW . S
-
-        in the complete electron+nuclear Hilbert space.
-        """
 
         sx, sy, sz = (
             self._electron_operators()
@@ -499,10 +391,6 @@ class ODMR:
     def ms0_projector(
         self,
     ) -> ComplexArray:
-        """
-        Return the electronic ms=0 projector embedded in the
-        complete electron+nuclear Hilbert space.
-        """
 
         p0_electron = np.diag(
             [
@@ -521,23 +409,13 @@ class ODMR:
         )
 
     # =========================================================
-    # Initial spectral populations
+    # Spectral weights
     # =========================================================
 
     def initial_populations(
         self,
         states: ComplexArray,
     ) -> FloatArray:
-        """
-        Construct spectral transition weights.
-
-        These weights are used to determine how strongly each
-        Hamiltonian transition contributes to the effective
-        microwave population-transfer rate.
-
-        The actual optical steady-state populations are solved
-        separately from the five-level rate equations.
-        """
 
         dimension = (
             states.shape[1]
@@ -591,16 +469,12 @@ class ODMR:
         )
 
     # =========================================================
-    # Transition calculation
+    # Hamiltonian transitions
     # =========================================================
 
     def calculate_transitions(
         self,
     ) -> list[ODMRTransition]:
-        """
-        Calculate microwave-accessible transitions from the
-        complete spin Hamiltonian.
-        """
 
         energies, states = (
             eigensystem(
@@ -690,20 +564,6 @@ class ODMR:
         self,
         transition: ODMRTransition,
     ) -> float:
-        """
-        Return the Rabi frequency for one transition in GHz.
-
-        The user-supplied rabi_frequency corresponds to an
-        allowed pure electronic spin-1 transverse transition
-        with matrix-element strength 1/2.
-
-        Therefore
-
-            Omega_ij
-            =
-            Omega_ref
-            sqrt(M_ij / (1/2)).
-        """
 
         if transition.strength <= 0.0:
             return 0.0
@@ -717,150 +577,130 @@ class ODMR:
         )
 
     # =========================================================
-    # Bloch-derived microwave transition rate
+    # Effective transverse coherence time under laser
     # =========================================================
 
-    def _transition_mixing_rate(
+    @property
+    def optical_transverse_decay_rate(
+        self,
+    ) -> float:
+        """
+        Optical contribution to ground-state coherence decay.
+
+        Both g0 and g1 are excited at rate k_ex.
+
+        Loss from either endpoint contributes half its
+        population-loss rate to rho_01:
+
+            gamma_opt
+            =
+            (k_ex + k_ex) / 2
+            =
+            k_ex.
+        """
+
+        rates = (
+            self.optical_cycle.rates
+        )
+
+        return float(
+            rates.excitation
+        )
+
+    @property
+    def transverse_decay_rate(
+        self,
+    ) -> float:
+        """
+        Total transverse decay rate during CW illumination:
+
+            gamma_2
+            =
+            1/T2
+            +
+            gamma_opt.
+        """
+
+        return float(
+            1.0 / self.T2
+            + self.optical_transverse_decay_rate
+        )
+
+    @property
+    def effective_T2(
+        self,
+    ) -> float:
+        """
+        Effective transverse coherence time during CW optical
+        illumination.
+        """
+
+        return float(
+            1.0
+            / self.transverse_decay_rate
+        )
+
+    @property
+    def weak_drive_fwhm(
+        self,
+    ) -> float:
+        """
+        Weak-drive homogeneous FWHM in GHz during optical
+        illumination:
+
+            Gamma
+            =
+            gamma_2 / pi.
+        """
+
+        return float(
+            self.transverse_decay_rate
+            / np.pi
+        )
+
+    # =========================================================
+    # Seven-variable steady-state matrix for one transition
+    # =========================================================
+
+    def _bloch_rate_matrix(
         self,
         frequency: float,
         transition: ODMRTransition,
-    ) -> float:
-        """
-        Return the effective microwave population-transfer rate
-        for one transition.
-
-        Frequencies are stored in GHz = 1/ns.
-
-        The angular Rabi frequency is
-
-            Omega_w = 2*pi*Omega,
-
-        and angular detuning is
-
-            Delta_w = 2*pi*(f - f_ij).
-
-        After adiabatic elimination of the transverse
-        microwave coherence,
-
-            W_ij
-            =
-            Omega_w^2 T2
-            -----------------------------
-            2 [1 + Delta_w^2 T2^2].
-
-        The result has units of inverse ns.
-        """
-
-        omega = (
-            self._transition_rabi_frequency(
-                transition
-            )
-        )
-
-        if omega == 0.0:
-            return 0.0
-
-        detuning = (
-            float(frequency)
-            - transition.frequency
-        )
-
-        omega_angular = (
-            2.0
-            * np.pi
-            * omega
-        )
-
-        detuning_angular = (
-            2.0
-            * np.pi
-            * detuning
-        )
-
-        denominator = (
-            2.0
-            * (
-                1.0
-                +
-                (
-                    detuning_angular
-                    * self.T2
-                ) ** 2
-            )
-        )
-
-        return float(
-            omega_angular**2
-            * self.T2
-            / denominator
-        )
-
-    # =========================================================
-    # Total microwave mixing rate
-    # =========================================================
-
-    def _microwave_mixing_rate(
-        self,
-        frequency: float,
-        transitions: list[
-            ODMRTransition
-        ],
-    ) -> float:
-        """
-        Return the total effective microwave-induced
-        ground-state population-transfer rate W(f).
-
-        Importantly, the transition spectrum is NOT normalized
-        to its maximum.
-
-        Absolute Hamiltonian transition strengths therefore
-        remain in the model.
-        """
-
-        total_rate = 0.0
-
-        for transition in transitions:
-
-            transition_rate = (
-                self._transition_mixing_rate(
-                    frequency,
-                    transition,
-                )
-            )
-
-            total_rate += (
-                transition.population_weight
-                * transition_rate
-            )
-
-        return float(
-            total_rate
-        )
-
-    # =========================================================
-    # Five-level optical rate matrix
-    # =========================================================
-
-    def _rate_matrix(
-        self,
-        microwave_mixing: float,
     ) -> FloatArray:
         """
-        Construct the five-level optical rate matrix.
+        Construct the seven-variable optical-Bloch matrix.
 
-        Population ordering:
+        Variable ordering:
 
-            0 : g_ms0
-            1 : g_ms1
-            2 : e_ms0
-            3 : e_ms1
-            4 : singlet
+            0 : p_g0
+            1 : p_g1
+            2 : p_e0
+            3 : p_e1
+            4 : p_s
+            5 : u = 2 Re(rho_01)
+            6 : v = 2 Im(rho_01)
 
-        Evolution convention:
+        Evolution:
 
-            dp/dt = K p.
+            dx/dt = A x.
 
-        Therefore every column of K must sum to zero.
+        The coherent microwave Hamiltonian is
+
+            H/h
+            =
+            Delta/2 sigma_z
+            +
+            Omega/2 sigma_x
+
+        in ordinary-frequency units.
+
+        Therefore
+
+            Omega_w = 2*pi*Omega
+
+        and
+
+            Delta_w = 2*pi*Delta.
         """
 
         rates = (
@@ -879,11 +719,11 @@ class ODMR:
             rates.radiative_ms1
         )
 
-        k_isc0 = float(
+        k_i0 = float(
             rates.isc_ms0
         )
 
-        k_isc1 = float(
+        k_i1 = float(
             rates.isc_ms1
         )
 
@@ -895,108 +735,218 @@ class ODMR:
             rates.singlet_to_ms1
         )
 
-        w = float(
-            microwave_mixing
+        omega = (
+            self._transition_rabi_frequency(
+                transition
+            )
         )
 
-        return np.array(
+        detuning = (
+            float(frequency)
+            - transition.frequency
+        )
+
+        omega_w = (
+            2.0
+            * np.pi
+            * omega
+        )
+
+        delta_w = (
+            2.0
+            * np.pi
+            * detuning
+        )
+
+        gamma_2 = (
+            self.transverse_decay_rate
+        )
+
+        # =====================================================
+        # Variable ordering:
+        #
+        # [pg0, pg1, pe0, pe1, ps, u, v]
+        #
+        # Every row has exactly seven entries.
+        # =====================================================
+
+        matrix = np.array(
             [
+                # -------------------------------------------------
+                # d p_g0 / dt
+                # -------------------------------------------------
                 [
-                    -(k_ex + w),
-                    w,
+                    -k_ex,
+                    0.0,
                     k_r0,
                     0.0,
                     k_s0,
+                    0.0,
+                    -0.5 * omega_w,
                 ],
+
+                # -------------------------------------------------
+                # d p_g1 / dt
+                # -------------------------------------------------
                 [
-                    w,
-                    -(k_ex + w),
+                    0.0,
+                    -k_ex,
                     0.0,
                     k_r1,
                     k_s1,
+                    0.0,
+                    +0.5 * omega_w,
                 ],
+
+                # -------------------------------------------------
+                # d p_e0 / dt
+                # -------------------------------------------------
                 [
                     k_ex,
                     0.0,
-                    -(k_r0 + k_isc0),
+                    -(k_r0 + k_i0),
+                    0.0,
+                    0.0,
                     0.0,
                     0.0,
                 ],
+
+                # -------------------------------------------------
+                # d p_e1 / dt
+                # -------------------------------------------------
                 [
                     0.0,
                     k_ex,
                     0.0,
-                    -(k_r1 + k_isc1),
+                    -(k_r1 + k_i1),
+                    0.0,
+                    0.0,
                     0.0,
                 ],
+
+                # -------------------------------------------------
+                # d p_s / dt
+                # -------------------------------------------------
                 [
                     0.0,
                     0.0,
-                    k_isc0,
-                    k_isc1,
+                    k_i0,
+                    k_i1,
                     -(k_s0 + k_s1),
+                    0.0,
+                    0.0,
+                ],
+
+                # -------------------------------------------------
+                # d u / dt
+                #
+                # u = 2 Re(rho_01)
+                # -------------------------------------------------
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    -gamma_2,
+                    -delta_w,
+                ],
+
+                # -------------------------------------------------
+                # d v / dt
+                #
+                # v = 2 Im(rho_01)
+                # -------------------------------------------------
+                [
+                    +omega_w,
+                    -omega_w,
+                    0.0,
+                    0.0,
+                    0.0,
+                    +delta_w,
+                    -gamma_2,
                 ],
             ],
             dtype=float,
         )
 
+        return matrix
+
     # =========================================================
-    # Steady-state solution
+    # Solve one coherent transition
     # =========================================================
 
     @staticmethod
-    def _steady_state(
-        rate_matrix: FloatArray,
+    def _bloch_steady_state(
+        matrix: FloatArray,
     ) -> FloatArray:
         """
-        Solve
+        Solve the seven-variable steady state.
 
-            K p_ss = 0
+        Population normalization:
 
-        subject to
+            p_g0
+            + p_g1
+            + p_e0
+            + p_e1
+            + p_s
+            =
+            1.
 
-            sum(p_ss) = 1.
+        u and v are coherences and do not contribute to
+        population normalization.
         """
 
-        matrix = np.array(
-            rate_matrix,
+        system = np.array(
+            matrix,
             dtype=float,
             copy=True,
         )
 
         rhs = np.zeros(
-            5,
+            7,
             dtype=float,
         )
 
-        # The steady-state system is singular because
-        # probability is conserved.
-        #
-        # Replace one redundant equation with the
-        # normalization condition.
-        matrix[-1, :] = 1.0
-        rhs[-1] = 1.0
-
-        populations = (
-            np.linalg.solve(
-                matrix,
-                rhs,
-            )
+        # Replace one redundant population equation with
+        # population normalization.
+        system[4, :] = np.array(
+            [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                0.0,
+                0.0,
+            ],
+            dtype=float,
         )
 
-        populations[
+        rhs[4] = 1.0
+
+        state = np.linalg.solve(
+            system,
+            rhs,
+        )
+
+        state[
             np.abs(
-                populations
+                state
             ) < 1e-14
         ] = 0.0
+
+        populations = (
+            state[:5]
+        )
 
         if np.any(
             populations
             < -1e-10
         ):
             raise RuntimeError(
-                "Optical steady state "
-                "contains negative populations."
+                "Optical-Bloch steady state contains "
+                "negative populations."
             )
 
         populations = np.clip(
@@ -1013,84 +963,108 @@ class ODMR:
 
         if total <= 0.0:
             raise RuntimeError(
-                "Optical steady state has "
-                "zero total population."
+                "Optical-Bloch steady state has "
+                "zero population."
             )
 
-        populations = (
+        # Normally this is already one to numerical precision.
+        state[:5] = (
             populations
             / total
         )
 
-        return populations
+        return state
 
     # =========================================================
     # Fluorescence
     # =========================================================
 
-    def _emission_rate(
+    def _emission_rate_from_state(
         self,
-        populations: FloatArray,
+        state: FloatArray,
     ) -> float:
-        """
-        Calculate the emitted radiative photon rate.
-
-        For the five-level model,
-
-            F
-            =
-            k_r0 p_e0
-            +
-            k_r1 p_e1.
-
-        Detector collection efficiency and background counts
-        are not included here.
-        """
 
         rates = (
             self.optical_cycle.rates
         )
 
-        p_e0 = float(
-            populations[2]
-        )
-
-        p_e1 = float(
-            populations[3]
-        )
-
         return float(
             rates.radiative_ms0
-            * p_e0
+            * state[2]
             +
             rates.radiative_ms1
-            * p_e1
+            * state[3]
         )
 
     # =========================================================
-    # Useful derived quantities
+    # Single-transition fluorescence
     # =========================================================
 
-    @property
-    def weak_drive_fwhm(
+    def _transition_fluorescence(
+        self,
+        frequency: float,
+        transition: ODMRTransition,
+    ) -> float:
+        """
+        Calculate fluorescence for one coherently driven
+        transition.
+        """
+
+        matrix = (
+            self._bloch_rate_matrix(
+                frequency,
+                transition,
+            )
+        )
+
+        state = (
+            self._bloch_steady_state(
+                matrix
+            )
+        )
+
+        return (
+            self._emission_rate_from_state(
+                state
+            )
+        )
+
+    # =========================================================
+    # Off-resonant optical fluorescence
+    # =========================================================
+
+    def _off_resonant_fluorescence(
         self,
     ) -> float:
         """
-        Homogeneous weak-drive FWHM in GHz.
-
-        For the Bloch-derived response,
-
-            Gamma
-            =
-            1 / (pi T2).
+        Calculate the optical steady-state fluorescence with
+        zero microwave drive.
         """
 
-        return float(
-            1.0
-            /
-            (
-                np.pi
-                * self.T2
+        dummy = ODMRTransition(
+            initial_state=0,
+            final_state=1,
+            frequency=0.0,
+            strength=0.0,
+            population_weight=1.0,
+        )
+
+        matrix = (
+            self._bloch_rate_matrix(
+                frequency=0.0,
+                transition=dummy,
+            )
+        )
+
+        state = (
+            self._bloch_steady_state(
+                matrix
+            )
+        )
+
+        return (
+            self._emission_rate_from_state(
+                state
             )
         )
 
@@ -1104,36 +1078,22 @@ class ODMR:
         """
         Simulate the CW-ODMR spectrum.
 
-        For every microwave frequency:
+        The seven-variable solver is exact for the reduced
+        optical model with one coherently driven effective
+        ground-state transition.
 
-        1. calculate exact Hamiltonian transition frequencies
-           and microwave matrix elements;
+        If the complete Hamiltonian produces several resolved
+        transitions, each transition is solved independently
+        with its own coherent Bloch problem.
 
-        2. calculate each transition-specific Rabi frequency;
+        Their fluorescence deficits are then combined.
 
-        3. derive the effective microwave transition rate from
-           rabi_frequency, T2, and detuning;
+        This is an approximation for a multi-transition
+        electron+nuclear system.
 
-        4. sum the transition contributions to obtain W(f);
-
-        5. construct the five-level optical rate matrix;
-
-        6. solve
-
-               K(f) p_ss(f) = 0;
-
-        7. calculate
-
-               F(f)
-               =
-               k_r0 p_e0(f)
-               +
-               k_r1 p_e1(f).
-
-        No independent phenomenological ODMR linewidth is
-        imposed.
-
-        No fixed ODMR contrast is imposed.
+        A future complete density-matrix / Liouvillian model
+        can treat all resolved transitions and coherences
+        simultaneously.
         """
 
         frequencies = np.linspace(
@@ -1150,6 +1110,15 @@ class ODMR:
             frequencies
         )
 
+        off_resonant = (
+            self._off_resonant_fluorescence()
+        )
+
+        if off_resonant <= 0.0:
+            raise RuntimeError(
+                "Off-resonant fluorescence must be positive."
+            )
+
         for (
             index,
             frequency,
@@ -1157,36 +1126,45 @@ class ODMR:
             frequencies
         ):
 
-            microwave_mixing = (
-                self._microwave_mixing_rate(
-                    float(frequency),
-                    transitions,
-                )
-            )
+            total_deficit = 0.0
 
-            rate_matrix = (
-                self._rate_matrix(
-                    microwave_mixing
-                )
-            )
+            for transition in transitions:
 
-            populations = (
-                self._steady_state(
-                    rate_matrix
+                transition_fluorescence = (
+                    self._transition_fluorescence(
+                        float(
+                            frequency
+                        ),
+                        transition,
+                    )
                 )
-            )
+
+                deficit = (
+                    off_resonant
+                    - transition_fluorescence
+                )
+
+                total_deficit += (
+                    transition.population_weight
+                    * deficit
+                )
 
             fluorescence[index] = (
-                self._emission_rate(
-                    populations
-                )
+                off_resonant
+                - total_deficit
             )
+
+        # Numerical guard.
+        fluorescence = np.clip(
+            fluorescence,
+            0.0,
+            None,
+        )
 
         # Normalize only for presentation.
         #
-        # The ODMR contrast and spectral structure have
-        # already emerged from the Hamiltonian, microwave
-        # response, and optical rate equations.
+        # Contrast and linewidth have already emerged from
+        # the optical-Bloch calculation.
         maximum = float(
             np.max(
                 fluorescence

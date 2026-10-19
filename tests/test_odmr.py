@@ -40,20 +40,8 @@ def build_odmr(
     return ODMR(
         nv,
         optical_cycle=build_optical_cycle(),
-
-        # 5 MHz reference Rabi frequency.
         rabi_frequency=0.005,
-
-        # Homogeneous transverse coherence time.
-        #
-        # T2 = 300 ns corresponds to weak-drive
-        # homogeneous FWHM
-        #
-        #     1 / (pi T2)
-        #
-        # ~= 1.06 MHz.
         T2=300.0,
-
         **kwargs,
     )
 
@@ -297,108 +285,8 @@ def test_zero_microwave_direction():
 
 
 # ============================================================
-# Optical rate-equation tests
+# Transition-specific Rabi frequency
 # ============================================================
-
-
-def test_odmr_rate_matrix_conserves_population():
-
-    nv = NVCenter(
-        nitrogen=None,
-        B=[0, 0, 0.005],
-    )
-
-    experiment = build_odmr(
-        nv
-    )
-
-    rate_matrix = (
-        experiment._rate_matrix(
-            microwave_mixing=0.01
-        )
-    )
-
-    np.testing.assert_allclose(
-        np.sum(
-            rate_matrix,
-            axis=0,
-        ),
-        0.0,
-        atol=1e-12,
-    )
-
-
-def test_odmr_steady_state_is_physical():
-
-    nv = NVCenter(
-        nitrogen=None,
-        B=[0, 0, 0.005],
-    )
-
-    experiment = build_odmr(
-        nv
-    )
-
-    rate_matrix = (
-        experiment._rate_matrix(
-            microwave_mixing=0.01
-        )
-    )
-
-    populations = (
-        experiment._steady_state(
-            rate_matrix
-        )
-    )
-
-    np.testing.assert_allclose(
-        np.sum(
-            populations
-        ),
-        1.0,
-        atol=1e-12,
-    )
-
-    assert np.all(
-        populations
-        >= -1e-12
-    )
-
-    assert np.all(
-        populations
-        <= 1.0 + 1e-12
-    )
-
-
-# ============================================================
-# T2-derived microwave response
-# ============================================================
-
-
-def test_t2_sets_weak_drive_linewidth():
-
-    nv = NVCenter(
-        nitrogen=None,
-    )
-
-    experiment = build_odmr(
-        nv
-    )
-
-    expected = (
-        1.0
-        /
-        (
-            np.pi
-            * 300.0
-        )
-    )
-
-    np.testing.assert_allclose(
-        experiment.weak_drive_fwhm,
-        expected,
-        atol=1e-15,
-    )
 
 
 def test_transition_rabi_frequency_for_pure_nv():
@@ -442,12 +330,16 @@ def test_transition_rabi_frequency_for_pure_nv():
         )
 
 
-def test_transition_mixing_rate_is_maximal_on_resonance():
+# ============================================================
+# Seven-variable optical-Bloch matrix
+# ============================================================
+
+
+def test_bloch_matrix_has_correct_shape():
 
     nv = NVCenter(
-        E=0.0,
-        B=[0, 0, 0.005],
         nitrogen=None,
+        B=[0, 0, 0.005],
     )
 
     experiment = build_odmr(
@@ -458,33 +350,24 @@ def test_transition_mixing_rate_is_maximal_on_resonance():
         experiment.calculate_transitions()[0]
     )
 
-    on_resonance = (
-        experiment._transition_mixing_rate(
+    matrix = (
+        experiment._bloch_rate_matrix(
             transition.frequency,
             transition,
         )
     )
 
-    off_resonance = (
-        experiment._transition_mixing_rate(
-            transition.frequency
-            + 0.01,
-            transition,
-        )
-    )
-
-    assert (
-        on_resonance
-        > off_resonance
+    assert matrix.shape == (
+        7,
+        7,
     )
 
 
-def test_transition_mixing_rate_is_symmetric_in_detuning():
+def test_bloch_steady_state_is_physical():
 
     nv = NVCenter(
-        E=0.0,
-        B=[0, 0, 0.005],
         nitrogen=None,
+        B=[0, 0, 0.005],
     )
 
     experiment = build_odmr(
@@ -495,37 +378,151 @@ def test_transition_mixing_rate_is_symmetric_in_detuning():
         experiment.calculate_transitions()[0]
     )
 
-    detuning = 0.003
-
-    lower = (
-        experiment._transition_mixing_rate(
-            transition.frequency
-            - detuning,
+    matrix = (
+        experiment._bloch_rate_matrix(
+            transition.frequency,
             transition,
         )
     )
 
-    upper = (
-        experiment._transition_mixing_rate(
-            transition.frequency
-            + detuning,
+    state = (
+        experiment._bloch_steady_state(
+            matrix
+        )
+    )
+
+    populations = (
+        state[:5]
+    )
+
+    np.testing.assert_allclose(
+        np.sum(
+            populations
+        ),
+        1.0,
+        atol=1e-12,
+    )
+
+    assert np.all(
+        populations
+        >= -1e-12
+    )
+
+    assert np.all(
+        populations
+        <= 1.0 + 1e-12
+    )
+
+    assert np.all(
+        np.isfinite(
+            state
+        )
+    )
+
+
+def test_bloch_population_equations_conserve_probability():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    matrix = (
+        experiment._bloch_rate_matrix(
+            transition.frequency,
+            transition,
+        )
+    )
+
+    # Sum only the five population equations.
+    #
+    # The resulting row vector must vanish, including
+    # the microwave-coherence columns. This expresses
+    #
+    # d/dt (
+    #     p_g0
+    #     + p_g1
+    #     + p_e0
+    #     + p_e1
+    #     + p_s
+    # ) = 0.
+    population_sum_derivative = (
+        np.sum(
+            matrix[:5, :],
+            axis=0,
+        )
+    )
+
+    np.testing.assert_allclose(
+        population_sum_derivative,
+        0.0,
+        atol=1e-12,
+    )
+
+
+def test_bloch_matrix_zero_rabi_decouples_coherences():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = ODMR(
+        nv,
+        optical_cycle=build_optical_cycle(),
+        rabi_frequency=0.0,
+        T2=300.0,
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    matrix = (
+        experiment._bloch_rate_matrix(
+            transition.frequency,
             transition,
         )
     )
 
     np.testing.assert_allclose(
-        lower,
-        upper,
+        matrix[0, 6],
+        0.0,
+        atol=1e-15,
+    )
+
+    np.testing.assert_allclose(
+        matrix[1, 6],
+        0.0,
+        atol=1e-15,
+    )
+
+    np.testing.assert_allclose(
+        matrix[6, 0],
+        0.0,
+        atol=1e-15,
+    )
+
+    np.testing.assert_allclose(
+        matrix[6, 1],
+        0.0,
         atol=1e-15,
     )
 
 
-def test_transition_mixing_rate_half_max_at_t2_half_width():
+def test_bloch_matrix_has_zero_detuning_on_resonance():
 
     nv = NVCenter(
-        E=0.0,
-        B=[0, 0, 0.005],
         nitrogen=None,
+        B=[0, 0, 0.005],
     )
 
     experiment = build_odmr(
@@ -536,35 +533,163 @@ def test_transition_mixing_rate_half_max_at_t2_half_width():
         experiment.calculate_transitions()[0]
     )
 
-    on_resonance = (
-        experiment._transition_mixing_rate(
+    matrix = (
+        experiment._bloch_rate_matrix(
             transition.frequency,
             transition,
         )
     )
 
-    half_width = (
-        1.0
-        /
-        (
-            2.0
-            * np.pi
-            * experiment.T2
-        )
+    # On resonance:
+    #
+    # Delta = 0
+    #
+    # so the u-v detuning coupling vanishes.
+    np.testing.assert_allclose(
+        matrix[5, 6],
+        0.0,
+        atol=1e-15,
     )
 
-    at_half_width = (
-        experiment._transition_mixing_rate(
-            transition.frequency
-            + half_width,
+    np.testing.assert_allclose(
+        matrix[6, 5],
+        0.0,
+        atol=1e-15,
+    )
+
+
+def test_bloch_microwave_population_terms_cancel():
+
+    nv = NVCenter(
+        nitrogen=None,
+        B=[0, 0, 0.005],
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    transition = (
+        experiment.calculate_transitions()[0]
+    )
+
+    matrix = (
+        experiment._bloch_rate_matrix(
+            transition.frequency,
             transition,
         )
     )
 
+    # The microwave contribution from v transfers
+    # population between g0 and g1 but cannot create
+    # or destroy total population.
     np.testing.assert_allclose(
-        at_half_width,
-        0.5 * on_resonance,
-        rtol=1e-12,
+        matrix[0, 6]
+        + matrix[1, 6],
+        0.0,
+        atol=1e-15,
+    )
+
+
+# ============================================================
+# Transverse coherence / optical broadening
+# ============================================================
+
+
+def test_transverse_decay_includes_optical_excitation():
+
+    nv = NVCenter(
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    k_ex = (
+        experiment
+        .optical_cycle
+        .rates
+        .excitation
+    )
+
+    expected = (
+        1.0 / experiment.T2
+        + k_ex
+    )
+
+    np.testing.assert_allclose(
+        experiment.transverse_decay_rate,
+        expected,
+        atol=1e-15,
+    )
+
+
+def test_effective_t2_includes_optical_excitation():
+
+    nv = NVCenter(
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    expected = (
+        1.0
+        /
+        (
+            1.0 / experiment.T2
+            + experiment
+            .optical_cycle
+            .rates
+            .excitation
+        )
+    )
+
+    np.testing.assert_allclose(
+        experiment.effective_T2,
+        expected,
+        atol=1e-15,
+    )
+
+
+def test_cw_weak_drive_linewidth_includes_optical_dephasing():
+
+    nv = NVCenter(
+        nitrogen=None,
+    )
+
+    experiment = build_odmr(
+        nv
+    )
+
+    k_ex = (
+        experiment
+        .optical_cycle
+        .rates
+        .excitation
+    )
+
+    expected_gamma_2 = (
+        1.0 / experiment.T2
+        + k_ex
+    )
+
+    expected_fwhm = (
+        expected_gamma_2
+        / np.pi
+    )
+
+    np.testing.assert_allclose(
+        experiment.transverse_decay_rate,
+        expected_gamma_2,
+        atol=1e-15,
+    )
+
+    np.testing.assert_allclose(
+        experiment.weak_drive_fwhm,
+        expected_fwhm,
         atol=1e-15,
     )
 
